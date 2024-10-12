@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { signIn } from '@/auth';
 import { AuthError } from 'next-auth';
+import { fetchInvoiceById } from './data';
 
 const FormSchema = z.object({
   id: z.string(),
@@ -76,6 +77,7 @@ export async function updateInvoice(
   id: string,
   prevState: State,
   formData: FormData,
+  userName:string
 ) {
   const validatedFields = UpdateInvoice.safeParse({
     customerId: formData.get('customerId'),
@@ -94,11 +96,26 @@ export async function updateInvoice(
   const amountInCents = amount * 100;
 
   try {
+
+    const invoice = await fetchInvoiceById(id)
+
+    if (!invoice) {
+      return {
+        message: 'invoice not found',
+      };
+    }
+  
+    const previousStatus = invoice.status
+
     await sql`
       UPDATE invoices
       SET customer_id = ${customerId}, amount = ${amountInCents}, status = ${status}
       WHERE id = ${id}
     `;
+
+    if (previousStatus !== status) {
+      await logStatusChange(id,previousStatus,status,userName)
+    }
   } catch (error) {
     return { message: 'Database Error: Failed to Update Invoice.' };
   }
@@ -107,15 +124,28 @@ export async function updateInvoice(
   redirect('/dashboard/invoices');
 }
 
-export async function deleteInvoice(id: string) {
+export async function cancelInvoice(id: string,userName:string) {
   // throw new Error('Failed to Delete Invoice');
 
   try {
-    await sql`DELETE FROM invoices WHERE id = ${id}`;
+
+
+  const invoice = await fetchInvoiceById(id)
+
+  if (!invoice) {
+    return {
+      message: 'invoice not found',
+    };
+  }
+
+  const previousStatus = invoice.status
+    await sql`UPDATE invoices SET status= 'canceled' WHERE id = ${id}`;
+
+    await logStatusChange(id, previousStatus, 'canceled',userName)
     revalidatePath('/dashboard/invoices');
-    return { message: 'Deleted Invoice' };
+    return { message: 'canceled Invoice' };
   } catch (error) {
-    return { message: 'Database Error: Failed to Delete Invoice.' };
+    return { message: 'Database Error: Failed to canceled Invoice.' };
   }
 }
 
@@ -136,4 +166,96 @@ export async function authenticate(
     }
     throw error;
   }
+}
+
+
+export async function updateInvoiceStatus(
+  id: string,
+  newStatus: string,
+  userName:string,
+) {
+  const validatedStatus= ['pending', 'paid','canceled','overdue'] 
+
+  if (!validatedStatus.includes(newStatus)) {
+    return {
+      message: 'invalid status.',
+    };
+  }
+  if (!userName) {
+    return {
+      message: 'user not auth.',
+    };
+  }
+
+
+  const invoice = await fetchInvoiceById(id)
+
+  if (!invoice) {
+    return {
+      message: 'invoice not found',
+    };
+  }
+
+  const previousStatus = invoice.status
+
+  try {
+    await sql`
+      UPDATE invoices
+      SET status = ${newStatus}
+      WHERE id = ${id}
+    `;
+
+    logStatusChange(id,previousStatus,newStatus, userName )
+  } catch (error) {
+    return { message: 'Database Error: Failed to Update Invoice.' };
+  }
+
+  revalidatePath('/dashboard/invoices');
+  redirect('/dashboard/invoices');
+}
+
+
+export async function logStatusChange(invoiceId : string ,previousStatus:string,newStatus:string,changedby:string){
+  try {
+    await sql`
+    INSERT INTO status_changes (invoice_id, previous_status, new_status, changed_by)
+    VALUES (${invoiceId},${previousStatus},${newStatus},${changedby})
+    `;
+  } catch (error){
+    return { message: 'Database Error: Failed logging status change.' };
+  }
+}
+
+
+
+export async function restoreInvoiceStatus(invoiceId:string,previousStatus:string,userName:string){
+  const validatedStatus= ['pending', 'paid','canceled','overdue'] 
+
+  if (!validatedStatus.includes(previousStatus)) {
+    return {
+      message: 'invalid status.',
+    };
+  }
+  if (!userName) {
+    return {
+      message: 'user not auth.',
+    };
+  }
+  try {
+    await sql`
+      UPDATE invoices
+      SET status = ${previousStatus}
+      WHERE id = ${invoiceId}
+    `;
+
+    logStatusChange(invoiceId,previousStatus,previousStatus, userName )
+
+
+  revalidatePath('/dashboard/invoices');
+  return { message : 'invoice status restired'}
+
+
+}catch (error) {
+  return { message: 'Database Error: Failed restore status change.' };
+}
 }

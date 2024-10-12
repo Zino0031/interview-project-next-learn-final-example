@@ -9,8 +9,9 @@ import {
 } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import { Button } from '@/app/ui/button';
-import { updateInvoice, State } from '@/app/lib/actions';
+import { State, updateInvoice } from '@/app/lib/actions';
 import { useActionState } from 'react';
+import { useSession } from 'next-auth/react';
 
 export default function EditInvoiceForm({
   invoice,
@@ -20,7 +21,14 @@ export default function EditInvoiceForm({
   customers: CustomerField[];
 }) {
   const initialState: State = { message: null, errors: {} };
-  const updateInvoiceWithId = updateInvoice.bind(null, invoice.id);
+  const { data: Session } = useSession()
+  const userName = Session?.user?.name
+  if (!userName){
+    throw new Error('user not auth')
+}
+  const updateInvoiceWithId = async(prevState:State, formData:FormData) => {
+    return updateInvoice(invoice.id, prevState, formData , userName);
+  } 
   const [state, formAction] = useActionState(updateInvoiceWithId, initialState);
 
   return (

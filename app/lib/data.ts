@@ -89,14 +89,18 @@ export async function fetchFilteredInvoices(
   currentPage: number,
 ) {
   const offset = (currentPage - 1) * ITEMS_PER_PAGE;
-
+  
   try {
     const invoices = await sql<InvoicesTable>`
       SELECT
         invoices.id,
         invoices.amount,
         invoices.date,
-        invoices.status,
+        CASE 
+          WHEN invoices.status = 'pending' AND invoices.date < NOW() - INTERVAL '14 days'
+          THEN 'overdue'
+          ELSE invoices.status
+        END as status,
         customers.name,
         customers.email,
         customers.image_url
@@ -213,5 +217,26 @@ export async function fetchFilteredCustomers(query: string) {
   } catch (err) {
     console.error('Database Error:', err);
     throw new Error('Failed to fetch customer table.');
+  }
+}
+
+
+export async function fetchStatusChangeLogs(invoiceId:string){
+  try {
+    const data = await sql`
+      SELECT
+        previous_status,
+        new_status,
+        changed_by,
+        changed_at
+      FROM status_changes
+      WHERE invoice_id = ${invoiceId}
+      ORDER BY changed_at DESC
+    `;
+  
+    return data.rows
+  } catch (error) {
+    console.error('Database Error:', error);
+    throw new Error('Failed to fetch status logs table.');
   }
 }

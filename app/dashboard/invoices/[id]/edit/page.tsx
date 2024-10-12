@@ -1,8 +1,9 @@
 import Form from '@/app/ui/invoices/edit-form';
 import Breadcrumbs from '@/app/ui/invoices/breadcrumbs';
-import { fetchInvoiceById, fetchCustomers } from '@/app/lib/data';
+import { fetchInvoiceById, fetchCustomers, fetchStatusChangeLogs } from '@/app/lib/data';
 import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
+import Logs from '@/app/ui/invoices/logs';
 
 export const metadata: Metadata = {
   title: 'Edit Invoice',
@@ -10,9 +11,10 @@ export const metadata: Metadata = {
 
 export default async function Page({ params }: { params: { id: string } }) {
   const id = params.id;
-  const [invoice, customers] = await Promise.all([
+  const [invoice, customers, StatusChangeLogs] = await Promise.all([
     fetchInvoiceById(id),
     fetchCustomers(),
+    fetchStatusChangeLogs(id),
   ]);
 
   if (!invoice) {
@@ -32,6 +34,7 @@ export default async function Page({ params }: { params: { id: string } }) {
         ]}
       />
       <Form invoice={invoice} customers={customers} />
+      <Logs logs={StatusChangeLogs} invoiceid={invoice.id} />
     </main>
   );
 }
